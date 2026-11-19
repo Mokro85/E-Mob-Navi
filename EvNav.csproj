@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>EvNav</RootNamespace>
+    <AssemblyName>EvNav</AssemblyName>
+    <Version>0.1.0</Version>
+    <Product>EvNav</Product>
+    <Description>Offline-EV-Navigation mit OpenStreetMap-Daten und Ladestopp-Planung</Description>
+  </PropertyGroup>
+
+</Project>

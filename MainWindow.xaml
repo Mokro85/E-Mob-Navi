@@ -1,0 +1,152 @@
+<Window x:Class="EvNav.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:EvNav.Controls"
+        Title="EvNav – Offline-EV-Navigation mit OpenStreetMap"
+        Height="780" Width="1360" MinHeight="560" MinWidth="980">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText"
+                           Text="Bereit. OSM-Datei laden (z. B. samples/demo.osm) und Start/Ziel setzen."/>
+            </StatusBarItem>
+        </StatusBar>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="8">
+                    <GroupBox Header="Karte (OpenStreetMap, offline)">
+                        <StackPanel>
+                            <Button x:Name="LoadMapButton" Content="OSM-Datei laden (.osm / .osm.gz)"
+                                    Click="LoadMap_Click"/>
+                            <TextBlock x:Name="MapInfoText" Text="Keine Karte geladen."
+                                       TextWrapping="Wrap" FontSize="11" Foreground="#555"/>
+                            <CheckBox x:Name="AvoidHighwaysCheck" Content="Autobahn meiden" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Start &amp; Ziel">
+                        <StackPanel>
+                            <TextBlock Text="Suche (Straße / Ort):" FontSize="11"/>
+                            <TextBox x:Name="SearchBox" TextChanged="SearchBox_TextChanged"/>
+                            <ListBox x:Name="SearchResults" Height="110" Visibility="Collapsed"
+                                     SelectionChanged="SearchResults_SelectionChanged"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                            <TextBlock Text="… oder direkt auf der Karte klicken:" FontSize="11" Margin="0,4,0,0"/>
+                            <UniformGrid Columns="2">
+                                <Button x:Name="PickStartButton" Content="● Start klicken" Click="PickStart_Click"
+                                        Margin="0,2,2,2"/>
+                                <Button x:Name="PickEndButton" Content="● Ziel klicken" Click="PickEnd_Click"
+                                        Margin="2,2,0,2"/>
+                            </UniformGrid>
+                            <UniformGrid Columns="2">
+                                <Button Content="Suche = Start" Click="UseSearchAsStart_Click" Margin="0,2,2,2"/>
+                                <Button Content="Suche = Ziel" Click="UseSearchAsEnd_Click" Margin="2,2,0,2"/>
+                            </UniformGrid>
+                            <TextBlock x:Name="StartLabel" Text="Start: –" FontWeight="SemiBold" Margin="0,6,0,0"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock x:Name="EndLabel" Text="Ziel: –" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Fahrzeugprofil">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="64"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="64"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Batterie [kWh]" VerticalAlignment="Center"
+                                       FontSize="11"/>
+                            <TextBox x:Name="BatteryBox" Grid.Row="0" Grid.Column="1"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Verbrauch [kWh/100]" VerticalAlignment="Center"
+                                       FontSize="11" Margin="6,0,0,0"/>
+                            <TextBox x:Name="ConsumptionBox" Grid.Row="0" Grid.Column="3"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Max. DC [kW]" VerticalAlignment="Center"
+                                       FontSize="11"/>
+                            <TextBox x:Name="MaxDcBox" Grid.Row="1" Grid.Column="1"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="Start-SoC [%]" VerticalAlignment="Center"
+                                       FontSize="11" Margin="6,0,0,0"/>
+                            <TextBox x:Name="StartSocBox" Grid.Row="1" Grid.Column="3"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Min-SoC Station [%]" VerticalAlignment="Center"
+                                       FontSize="11"/>
+                            <TextBox x:Name="MinArrivalBox" Grid.Row="2" Grid.Column="1"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2" Text="Ladegrenze [%]" VerticalAlignment="Center"
+                                       FontSize="11" Margin="6,0,0,0"/>
+                            <TextBox x:Name="MaxChargeBox" Grid.Row="2" Grid.Column="3"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Min-SoC Ziel [%]" VerticalAlignment="Center"
+                                       FontSize="11"/>
+                            <TextBox x:Name="MinDestBox" Grid.Row="3" Grid.Column="1"/>
+                            <TextBlock Grid.Row="3" Grid.Column="2" Text="Max. Umweg [km]" VerticalAlignment="Center"
+                                       FontSize="11" Margin="6,0,0,0"/>
+                            <TextBox x:Name="MaxDetourBox" Grid.Row="3" Grid.Column="3"/>
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Min. Leistung [kW]" VerticalAlignment="Center"
+                                       FontSize="11"/>
+                            <TextBox x:Name="MinPowerBox" Grid.Row="4" Grid.Column="1"/>
+                            <StackPanel Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="2" Orientation="Horizontal"
+                                        Margin="6,2,0,0">
+                                <CheckBox x:Name="CcsCheck" Content="CCS" IsChecked="True" Margin="0,0,6,0"/>
+                                <CheckBox x:Name="Type2Check" Content="Typ 2" IsChecked="True" Margin="0,0,6,0"/>
+                                <CheckBox x:Name="ChademoCheck" Content="CHAdeMO"/>
+                            </StackPanel>
+                        </Grid>
+                    </GroupBox>
+
+                    <GroupBox Header="Route &amp; Ladestopps">
+                        <StackPanel>
+                            <Button x:Name="RouteButton" Content="Route + Ladestopps berechnen"
+                                    Click="Route_Click" FontWeight="SemiBold"/>
+                            <UniformGrid Columns="2">
+                                <Button Content="Start/Ziel tauschen" Click="Swap_Click" Margin="0,2,2,2"/>
+                                <Button Content="Karte auf Route" Click="ZoomToRoute_Click" Margin="2,2,0,2"/>
+                            </UniformGrid>
+                            <CheckBox x:Name="OnlineCheck" Content="Online-Dienste (ORS/OCM) falls Key vorhanden"
+                                      Margin="0,8,0,2"/>
+                            <TextBlock Text="ORS API-Key (Routing):" FontSize="11"/>
+                            <TextBox x:Name="OrsKeyBox"/>
+                            <TextBlock Text="OpenChargeMap API-Key (Ladesäulen):" FontSize="11"/>
+                            <TextBox x:Name="OcmKeyBox"/>
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+            <Grid Grid.Column="1" Margin="6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <controls:MapControl x:Name="Map" Grid.Row="0"/>
+                <GroupBox Grid.Row="1" Header="Ladestopps" Margin="0,6,0,0" MaxHeight="190">
+                    <ListView x:Name="StopsList" FontSize="11">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="#" Width="26" DisplayMemberBinding="{Binding Index}"/>
+                                <GridViewColumn Header="Ladestation" Width="230"
+                                                DisplayMemberBinding="{Binding StationName}"/>
+                                <GridViewColumn Header="km" Width="55" DisplayMemberBinding="{Binding AlongKm}"/>
+                                <GridViewColumn Header="Umweg" Width="60" DisplayMemberBinding="{Binding DetourKm}"/>
+                                <GridViewColumn Header="Ankunft" Width="58" DisplayMemberBinding="{Binding ArriveSoc}"/>
+                                <GridViewColumn Header="Abfahrt" Width="58" DisplayMemberBinding="{Binding DepartSoc}"/>
+                                <GridViewColumn Header="Laden [kWh]" Width="65"
+                                                DisplayMemberBinding="{Binding ChargeKwh}"/>
+                                <GridViewColumn Header="Dauer [min]" Width="65"
+                                                DisplayMemberBinding="{Binding ChargeMin}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </GroupBox>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>
