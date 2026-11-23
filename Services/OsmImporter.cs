@@ -10,7 +10,6 @@ public static partial class OsmImporter
 {
     public static OsmImportResult Import(string path)
     {
-        var result = new OsmImportResult();
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
         Stream stream = fs;
         if (fs.Length >= 2)
@@ -18,8 +17,15 @@ public static partial class OsmImporter
             int b0 = fs.ReadByte();
             int b1 = fs.ReadByte();
             fs.Seek(0, SeekOrigin.Begin);
-            if (b0 == 0x1f && b1 == 0x8b) stream = new GZipStream(fs, CompressionMode.Decompress);
+            if (b0 == 0x1f && b1 == 0x8b)
+                stream = new GZipStream(fs, CompressionMode.Decompress);
         }
+        return Import(stream);
+    }
+
+    public static OsmImportResult Import(Stream stream)
+    {
+        var result = new OsmImportResult();
 
         var settings = new XmlReaderSettings
         {

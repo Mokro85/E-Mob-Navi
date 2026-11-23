@@ -1,7 +1,11 @@
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using EvNav.Models;
 using EvNav.Services;
 
@@ -39,7 +43,29 @@ public sealed class MapControl : FrameworkElement
     private bool _pickStart;
     private bool _pickEnd;
 
+    private static readonly HttpClient TileHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly string TileDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EvNav", "tiles");
+    private static readonly Brush AttrBg = Frozen(new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)));
+    private static readonly Brush AttrBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)));
+    private readonly ConcurrentDictionary<(int Z, int X, int Y), BitmapImage?> _tiles = new();
+    private readonly HashSet<(int Z, int X, int Y)> _pending = new();
+
+    static MapControl()
+    {
+        TileHttp.DefaultRequestHeaders.UserAgent.ParseAdd("EvNav/0.1 (personal map viewer)");
+    }
+
     public event Action<GeoPoint>? GeoPicked;
+
+    public bool ShowOnlineTiles { get; set; }
+
+    public (double MinLat, double MinLon, double MaxLat, double MaxLon) CurrentView()
+    {
+        double w = Math.Max(1, ActualWidth);
+        double h = Math.Max(1, ActualHeight);
+        return (Math.Clamp(LatAt(h), -85, 85), LonAt(0), Math.Clamp(LatAt(0), -85, 85), LonAt(w));
+    }
 
     public MapData? Data
     {
@@ -105,6 +131,7 @@ public sealed class MapControl : FrameworkElement
         double w = Math.Max(1, ActualWidth);
         double h = Math.Max(1, ActualHeight);
         dc.DrawRectangle(Bg, null, new Rect(0, 0, w, h));
+        if (ShowOnlineTiles) DrawTiles(dc);
         if (_data is null) return;
 
         var viewport = new Rect(0, 0, w, h);
@@ -157,6 +184,110 @@ public sealed class MapControl : FrameworkElement
         }
 
         dc.Pop();
+
+        if (ShowOnlineTiles)
+        {
+            var attr = Text("© OpenStreetMap-Mitwirkende", 10, AttrBrush);
+            dc.DrawRectangle(AttrBg, null,
+                new Rect(w - attr.Width - 10, h - attr.Height - 6, attr.Width + 8, attr.Height + 4));
+            dc.DrawText(attr, new Point(w - attr.Width - 6, h - attr.Height - 4));
+        }
+    }
+
+    private void DrawTiles(DrawingContext dc)
+    {
+        double w = Math.Max(1, ActualWidth);
+        double h = Math.Max(1, ActualHeight);
+        int z = (int)Math.Clamp(Math.Floor(Math.Log2(Math.Max(1e-6, _zoom) * 360.0 / 256.0)), 2, 19);
+        int n = 1 << z;
+        double tileScreen = 360.0 / n * _zoom;
+        if (tileScreen < 4 || tileScreen > 4096) return;
+        int tx0 = (int)Math.Floor((LonAt(0) + 180.0) / 360.0 * n);
+        int tx1 = (int)Math.Floor((LonAt(w) + 180.0) / 360.0 * n);
+        double mercTop = _center.MercY + h / 2 / _zoom;
+        double mercBottom = _center.MercY - h / 2 / _zoom;
+        int ty0 = (int)Math.Floor((1.0 - mercTop / Math.PI) / 2.0 * n);
+        int ty1 = (int)Math.Floor((1.0 - mercBottom / Math.PI) / 2.0 * n);
+
+        for (int tx = tx0; tx <= tx1; tx++)
+        {
+            if (tx < 0 || tx >= n) continue;
+            for (int ty = ty0; ty <= ty1; ty++)
+            {
+                if (ty < 0 || ty >= n) continue;
+                double tileMercTop = Math.PI * (1.0 - 2.0 * ty / n);
+                var dest = new Rect(
+                    (tx * 360.0 / n - 180.0 - _center.Lon) * _zoom + w / 2,
+                    h / 2 - (tileMercTop - _center.MercY) * _zoom,
+                    tileScreen, tileScreen);
+                var img = GetTile(z, tx, ty);
+                if (img is not null) dc.DrawImage(img, dest);
+            }
+        }
+    }
+
+    private BitmapImage? GetTile(int z, int x, int y)
+    {
+        var key = (z, x, y);
+        if (_tiles.TryGetValue(key, out var img)) return img;
+        if (_pending.Contains(key)) return null;
+        _pending.Add(key);
+        Task.Run(async () =>
+        {
+            BitmapImage? bmp;
+            try
+            {
+                byte[]? bytes = TryReadCache(z, x, y);
+                bytes ??= await TileHttp.GetByteArrayAsync($"https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+                WriteCache(z, x, y, bytes);
+                bmp = ImageFromBytes(bytes);
+            }
+            catch
+            {
+                bmp = null;
+            }
+            _tiles[key] = bmp;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                new Action(() => { _pending.Remove(key); InvalidateVisual(); }));
+        });
+        return null;
+    }
+
+    private static byte[]? TryReadCache(int z, int x, int y)
+    {
+        try
+        {
+            var path = Path.Combine(TileDir, z.ToString(), x.ToString(), y + ".png");
+            return File.Exists(path) ? File.ReadAllBytes(path) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void WriteCache(int z, int x, int y, byte[] bytes)
+    {
+        try
+        {
+            var path = Path.Combine(TileDir, z.ToString(), x.ToString(), y + ".png");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, bytes);
+        }
+        catch
+        {
+        }
+    }
+
+    private static BitmapImage ImageFromBytes(byte[] bytes)
+    {
+        var bmp = new BitmapImage();
+        bmp.BeginInit();
+        bmp.CacheOption = BitmapCacheOption.OnLoad;
+        bmp.StreamSource = new MemoryStream(bytes);
+        bmp.EndInit();
+        bmp.Freeze();
+        return bmp;
     }
 
     private void DrawMarker(DrawingContext dc, GeoPoint? gp, string label, Brush fill)

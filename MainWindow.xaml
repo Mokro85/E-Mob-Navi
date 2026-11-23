@@ -18,12 +18,18 @@
             </Grid.ColumnDefinitions>
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
-                    <GroupBox Header="Karte (OpenStreetMap, offline)">
+                    <GroupBox Header="Karte (OpenStreetMap)">
                         <StackPanel>
                             <Button x:Name="LoadMapButton" Content="OSM-Datei laden (.osm / .osm.gz)"
                                     Click="LoadMap_Click"/>
+                            <Button x:Name="DownloadAreaButton" Click="DownloadArea_Click"
+                                    Content="Kartenbereich online laden (Overpass)"/>
+                            <TextBlock Text="Lädt Straßen + Ladesäulen der aktuellen Kartenansicht als Kartendaten."
+                                       FontSize="10" Foreground="#777" TextWrapping="Wrap"/>
                             <TextBlock x:Name="MapInfoText" Text="Keine Karte geladen."
                                        TextWrapping="Wrap" FontSize="11" Foreground="#555"/>
+                            <CheckBox x:Name="TileCheck" Content="Online-Kartenbilder (Internet)"
+                                      Margin="0,8,0,0" Checked="TileCheck_Changed" Unchecked="TileCheck_Changed"/>
                             <CheckBox x:Name="AvoidHighwaysCheck" Content="Autobahn meiden" Margin="0,6,0,0"/>
                         </StackPanel>
                     </GroupBox>

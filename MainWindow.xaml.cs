@@ -1,5 +1,8 @@
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
+using System.Net.Http;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using EvNav.Controls;
@@ -97,11 +100,33 @@ public partial class MainWindow : Window
 
     private async Task LoadOsmAsync(string path)
     {
-        SetStatus($"Importiere {Path.GetFileName(path)} …");
-        LoadMapButton.IsEnabled = false;
         try
         {
-            var result = await Task.Run(() => OsmImporter.Import(path));
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
+            Stream stream = fs;
+            byte[] head = new byte[2];
+            int read = fs.Read(head, 0, 2);
+            fs.Seek(0, SeekOrigin.Begin);
+            if (read == 2 && head[0] == 0x1f && head[1] == 0x8b)
+                stream = new GZipStream(fs, CompressionMode.Decompress);
+            await LoadFromStreamAsync(stream, Path.GetFileName(path), path);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Fehler beim Laden der OSM-Datei",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            SetStatus("Fehler beim Laden der OSM-Datei.");
+        }
+    }
+
+    private async Task LoadFromStreamAsync(Stream stream, string label, string? rememberPath)
+    {
+        SetStatus($"Importiere {label} …");
+        LoadMapButton.IsEnabled = false;
+        DownloadAreaButton.IsEnabled = false;
+        try
+        {
+            var result = await Task.Run(() => OsmImporter.Import(stream));
             var graph = await Task.Run(() => new RoadGraph(result));
             _osm = result;
             _graph = graph;
@@ -122,20 +147,79 @@ public partial class MainWindow : Window
             }
             Map.FitTo(sample);
 
-            _settings.LastOsmFile = path;
-            SettingsStore.Save(_settings);
-            SetStatus($"Karte geladen: {Path.GetFileName(path)}");
+            if (rememberPath is not null)
+            {
+                _settings.LastOsmFile = rememberPath;
+                SettingsStore.Save(_settings);
+            }
+            SetStatus($"Karte geladen: {label}");
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Fehler beim Laden der OSM-Datei",
+            MessageBox.Show(this, ex.Message, "Fehler beim Laden der Kartendaten",
                 MessageBoxButton.OK, MessageBoxImage.Error);
-            SetStatus("Fehler beim Laden der OSM-Datei.");
+            SetStatus("Fehler beim Laden der Kartendaten.");
         }
         finally
         {
             LoadMapButton.IsEnabled = true;
+            DownloadAreaButton.IsEnabled = true;
         }
+    }
+
+    private static readonly HttpClient _overpassHttp = new() { Timeout = TimeSpan.FromSeconds(120) };
+
+    private async void DownloadArea_Click(object sender, RoutedEventArgs e)
+    {
+        var (minLat, minLon, maxLat, maxLon) = Map.CurrentView();
+        double kmY = (maxLat - minLat) * 111.0;
+        double kmX = (maxLon - minLon) * 111.0 * Math.Max(0.2, Math.Cos((minLat + maxLat) / 2 * Math.PI / 180));
+        if (kmX > 45 || kmY > 45)
+        {
+            MessageBox.Show(this,
+                $"Der Kartenbereich ist zu groß ({kmX:F0} × {kmY:F0} km). Bitte hineinzoomen (max. ca. 45 km pro Seite).",
+                "Overpass-Download", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        DownloadAreaButton.IsEnabled = false;
+        try
+        {
+            SetStatus("Lade Kartenbereich von Overpass (OpenStreetMap) …");
+            var query = BuildOverpassQuery(minLat, minLon, maxLat, maxLon);
+            using var content = new StringContent(query, Encoding.UTF8, "text/plain");
+            using var resp = await _overpassHttp.PostAsync("https://overpass-api.de/api/interpreter", content);
+            resp.EnsureSuccessStatusCode();
+            var stream = await resp.Content.ReadAsStreamAsync();
+            await LoadFromStreamAsync(stream, "Overpass-Bereich", null);
+            SetStatus("Kartenbereich geladen (Quelle: © OpenStreetMap-Mitwirkende, ODbL).");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Overpass-Download fehlgeschlagen",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            SetStatus("Overpass-Download fehlgeschlagen.");
+        }
+        finally
+        {
+            DownloadAreaButton.IsEnabled = true;
+        }
+    }
+
+    private static string BuildOverpassQuery(double minLat, double minLon, double maxLat, double maxLon)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        string box = $"{minLat.ToString(inv)},{minLon.ToString(inv)},{maxLat.ToString(inv)},{maxLon.ToString(inv)}";
+        return "[out:xml][timeout:90];(way[\"highway\"](" + box + ");" +
+               "node[\"amenity\"=\"charging_station\"](" + box + "););(._;>;);out body;";
+    }
+
+    private void TileCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        Map.ShowOnlineTiles = TileCheck.IsChecked == true;
+        Map.InvalidateVisual();
+        if (Map.ShowOnlineTiles)
+            SetStatus("Online-Kartenbilder aktiv (© OpenStreetMap-Mitwirkende, zwischengespeichert).");
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
