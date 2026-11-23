@@ -115,7 +115,7 @@ public sealed class MapControl : FrameworkElement
 
         var clip = new RectangleGeometry(viewport);
         clip.Freeze();
-        using (dc.PushClip(clip))
+        dc.PushClip(clip);
         {
             foreach (var way in _data.Roads)
             {
@@ -155,6 +155,8 @@ public sealed class MapControl : FrameworkElement
             DrawMarker(dc, _start, "A", StartBrush);
             DrawMarker(dc, _end, "B", DestBrush);
         }
+
+        dc.Pop();
     }
 
     private void DrawMarker(DrawingContext dc, GeoPoint? gp, string label, Brush fill)
